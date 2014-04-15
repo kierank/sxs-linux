@@ -9,6 +9,11 @@
 
 #define PCI_DEVICE_ID_SXS_81CE 0x81ce
 
+#define SXS_MASTER_LINK_REG_L 0x10
+#define SXS_MASTER_LINK_REG_H 0x14
+#define SXS_MASTER_ADDR_REG_L 0x18
+#define SXS_MASTER_ADDR_REG_H 0x1c
+#define SXS_MASTER_SIZE_REG   0x20
 #define SXS_ENABLE_REG  0x28
 #define SXS_CONTROL_REG 0x2c
 #define SXS_STATUS_REG  0x6c
@@ -32,16 +37,15 @@ struct sxs_device {
 static int boot_check(struct pci_dev *dev)
 {
         int i, ret = 0;
-        u32 status, control;
+        u32 status;
+        u32 output[4];
 
         pci_read_config_dword(dev, SXS_STATUS_REG, &status);
         status &= 0xa0;
 
         if (status != 0xa0) {
-                if (status != 0x20 ) {
-                        control = 1;
-                        pci_write_config_dword(dev, SXS_CONTROL_REG, control);
-                }
+                if (status != 0x20 )
+                        pci_write_config_dword(dev, SXS_CONTROL_REG, 1);
 
                 for (i = 0; i < 40; i++) {
                         pci_read_config_dword(dev, SXS_STATUS_REG, &status);
@@ -51,11 +55,11 @@ static int boot_check(struct pci_dev *dev)
                 }
                 if (i == 40) {
                         ret = -EBUSY;
-                        goto end;
+                } else {
+                        // TODO: Read from response buffer
                 }
         }
 
-end:
         return ret;
 }
 
@@ -101,7 +105,6 @@ static int probe(struct pci_dev *pdev, const struct pci_device_id *id)
         if (error)
             goto error3;
 
-
         dev->mmio = pci_ioremap_bar(pdev, 0);
         if (!dev->mmio)
             goto error4;
@@ -141,6 +144,7 @@ static void remove(struct pci_dev *pdev)
         iounmap(dev->mmio);
         pci_release_regions(pdev);
         pci_disable_device(pdev);
+        kfree(dev);
 }
 
 static struct pci_driver sxs_driver = {
