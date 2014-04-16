@@ -30,45 +30,52 @@ struct sxs_device {
 
         /* Registers, IRQ */
         void __iomem *mmio;
-        int irq;
 };
 
-/* Setup the card exactly as the Windows driver does */
-static int boot_check(struct pci_dev *dev)
+static void read_response_buf(void __iomem *mmio, u32 *output)
+{
+    memcpy_fromio(output, mmio+SXS_RESPONSE_BUF, 4*4);
+}
+
+static int is_write_protected(struct pci_dev *pdev)
+{
+        u32 status;
+        struct sxs_device *dev = pci_get_drvdata(pdev);
+
+        status = readl(dev->mmio+SXS_STATUS_REG);
+
+        return (status >> 8) & 1;
+}
+
+/* Setup the card exactly as the Windows driver does, even the strange parts! */
+static int boot_check(struct sxs_device *dev)
 {
         int i, ret = 0;
         u32 status;
         u32 output[4];
 
-        pci_read_config_dword(dev, SXS_STATUS_REG, &status);
-        status &= 0xa0;
+        status = readl(dev->mmio+SXS_STATUS_REG);
+        printk(KERN_DEBUG"STATUS: %x", status );
 
-        if (status != 0xa0) {
-                if (status != 0x20 )
-                        pci_write_config_dword(dev, SXS_CONTROL_REG, 1);
+        if ((status & 0xa0) != 0xa0) {
+                if ((status & 0xff) == 0x20)
+                        writel(1, dev->mmio+SXS_CONTROL_REG);
 
                 for (i = 0; i < 40; i++) {
-                        pci_read_config_dword(dev, SXS_STATUS_REG, &status);
+                        status = readl(dev->mmio+SXS_STATUS_REG);
                         if (status & 0x80)
                             break;
                         msleep(100);
                 }
-                if (i == 40) {
+                if (i == 40)
                         ret = -EBUSY;
-                } else {
-                        // TODO: Read from response buffer
+                else {
+                        read_response_buf(dev->mmio, output);
+                        printk(KERN_DEBUG"Response %x %x %x %x", output[0], output[1], output[2], output[3] );
                 }
         }
 
         return ret;
-}
-
-static int is_write_protected(struct pci_dev *dev)
-{
-        u32 status;
-        pci_read_config_dword(dev, SXS_STATUS_REG, &status);
-
-        return (status >> 8) & 1;
 }
 
 /* Interrupt handler */
@@ -95,8 +102,6 @@ static int probe(struct pci_dev *pdev, const struct pci_device_id *id)
 
         /* TODO: MSI */
 
-        pci_set_master(pdev);
-
         error = pci_set_dma_mask(pdev, DMA_BIT_MASK(32));
         if (error)
             goto error3;
@@ -111,17 +116,21 @@ static int probe(struct pci_dev *pdev, const struct pci_device_id *id)
 
         // DMA stuff here!
 
+        pci_set_master(pdev);
 
-        if (request_irq(dev->irq, &sxs_irq, IRQF_SHARED,
-                  DRV_NAME, dev))
+        if (request_irq(pdev->irq, &sxs_irq, IRQF_SHARED, DRV_NAME, dev))
             goto error6;
 
+        if( boot_check(dev) < 0)
+            goto error7;
 
-        printk("sxs driver successfully loaded");
+        pci_set_drvdata(pdev, dev);
+
+        printk(KERN_DEBUG"sxs driver successfully loaded\n");
         return 0;
 
 error7:
-        free_irq(dev->irq, dev);
+        free_irq(pdev->irq, dev);
 error6:
         // FIXME
 error5:
@@ -140,7 +149,7 @@ static void remove(struct pci_dev *pdev)
 {
         struct sxs_device *dev = pci_get_drvdata(pdev);
 
-        free_irq(dev->irq, pdev);
+        free_irq(pdev->irq, dev);
         iounmap(dev->mmio);
         pci_release_regions(pdev);
         pci_disable_device(pdev);
