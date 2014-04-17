@@ -5,6 +5,8 @@
 #include <linux/init.h>
 #include <linux/delay.h>
 
+#include <asm/byteorder.h>
+
 #define DRV_NAME "sxs"
 
 #define PCI_DEVICE_ID_SXS_81CE 0x81ce
@@ -34,7 +36,7 @@ struct sxs_device {
 
 static void read_response_buf(void __iomem *mmio, u32 *output)
 {
-    memcpy_fromio(output, mmio+SXS_RESPONSE_BUF, 4*4);
+        memcpy_fromio(output, mmio+SXS_RESPONSE_BUF, 4*4);
 }
 
 static int is_write_protected(struct pci_dev *pdev)
@@ -42,7 +44,7 @@ static int is_write_protected(struct pci_dev *pdev)
         u32 status;
         struct sxs_device *dev = pci_get_drvdata(pdev);
 
-        status = readl(dev->mmio+SXS_STATUS_REG);
+        status = le32_to_cpu(readl(dev->mmio+SXS_STATUS_REG));
 
         return (status >> 8) & 1;
 }
@@ -54,15 +56,15 @@ static int boot_check(struct sxs_device *dev)
         u32 status;
         u32 output[4];
 
-        status = readl(dev->mmio+SXS_STATUS_REG);
+        status = le32_to_cpu(readl(dev->mmio+SXS_STATUS_REG));
         printk(KERN_DEBUG"STATUS: %x", status );
 
         if ((status & 0xa0) != 0xa0) {
                 if ((status & 0xff) == 0x20)
-                        writel(1, dev->mmio+SXS_CONTROL_REG);
+                        writel(cpu_to_le32(1), dev->mmio+SXS_CONTROL_REG);
 
                 for (i = 0; i < 40; i++) {
-                        status = readl(dev->mmio+SXS_STATUS_REG);
+                        status = le32_to_cpu(readl(dev->mmio+SXS_STATUS_REG));
                         if (status & 0x80)
                             break;
                         msleep(100);
@@ -100,7 +102,7 @@ static int probe(struct pci_dev *pdev, const struct pci_device_id *id)
         if (error < 0)
             goto error2;
 
-        /* TODO: MSI */
+        pci_enable_msi(pdev);
 
         error = pci_set_dma_mask(pdev, DMA_BIT_MASK(32));
         if (error)
