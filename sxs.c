@@ -154,6 +154,7 @@ static void remove(struct pci_dev *pdev)
         free_irq(pdev->irq, dev);
         iounmap(dev->mmio);
         pci_release_regions(pdev);
+        pci_disable_msi(pdev);
         pci_disable_device(pdev);
         kfree(dev);
 }
