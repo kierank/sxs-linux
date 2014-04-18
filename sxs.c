@@ -4,6 +4,10 @@
 #include <linux/pci.h>
 #include <linux/init.h>
 #include <linux/delay.h>
+#include <linux/blkdev.h>
+
+#include <linux/completion.h>
+#include <linux/dma-mapping.h>
 
 #include <asm/byteorder.h>
 
@@ -29,9 +33,18 @@ MODULE_DEVICE_TABLE(pci, ids);
 
 struct sxs_device {
         struct pci_dev *pci_dev;
-
-        /* Registers, IRQ */
+        spinlock_t lock;
         void __iomem *mmio;
+
+        struct gendisk *disk;
+        u64    capacity;
+        struct request_queue *queue;
+
+        struct completion irq_response;
+};
+
+static const struct block_device_operations sxs_bd_opts = {
+        .owner          = THIS_MODULE,
 };
 
 static void read_response_buf(void __iomem *mmio, u32 *output)
