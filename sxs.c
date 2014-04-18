@@ -86,7 +86,8 @@ static int boot_check(struct sxs_device *dev)
                         ret = -EBUSY;
                 else {
                         read_response_buf(dev->mmio, output);
-                        printk(KERN_DEBUG"Response %x %x %x %x", output[0], output[1], output[2], output[3] );
+                        /* Not clear what these values mean */
+                        printk(KERN_DEBUG"Boot Response %x %x %x %x \n", output[0], output[1], output[2], output[3] );
                 }
         }
 
