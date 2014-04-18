@@ -94,13 +94,49 @@ static int boot_check(struct sxs_device *dev)
         return ret;
 }
 
-/* Interrupt handler */
 static irqreturn_t sxs_irq(int irq, void *data)
 {
-        irqreturn_t ret = IRQ_NONE;
+        u32 status;
+        irqreturn_t ret = IRQ_HANDLED;
+        struct sxs_device *dev = data;
+        unsigned long flags;
 
+        spin_lock_irqsave(&dev->lock, flags);
+
+        status = le32_to_cpu(readl(dev->mmio+SXS_STATUS_REG));
+
+        if (status != 0x80000000)
+            writel(cpu_to_le32(0x80000000), dev->mmio+SXS_STATUS_REG);
+
+        printk(KERN_DEBUG"IRQ\n");
+
+        complete(&dev->irq_response);
+
+        spin_unlock_irqrestore(&dev->lock, flags);
 
         return ret;
+}
+
+static void setup_card(struct sxs_device *dev)
+{
+        u32 status;
+        u32 data[4];
+
+        status = readl(dev->mmio+SXS_STATUS_REG);
+        data[0] = 0;
+        data[1] = 0;
+        data[2] = 0;
+        data[3] = 0;
+
+        memcpy_toio(dev->mmio, data, 4*4);
+        writel(cpu_to_le32(0xa0), dev->mmio+SXS_ENABLE_REG);
+        writel(cpu_to_le32(0x80), dev->mmio+SXS_CONTROL_REG);
+
+        if (!wait_for_completion_timeout(&dev->irq_response, msecs_to_jiffies(1000))) {
+                printk(KERN_DEBUG"No IRQ\n");
+        }
+
+        writel(0, dev->mmio+SXS_ENABLE_REG);
 }
 
 static int probe(struct pci_dev *pdev, const struct pci_device_id *id)
@@ -111,6 +147,7 @@ static int probe(struct pci_dev *pdev, const struct pci_device_id *id)
         dev = kzalloc(sizeof(*dev), 0);
         if (!dev)
             goto error1;
+        spin_lock_init(&dev->lock);
 
         error = pci_enable_device(pdev);
         if (error < 0)
@@ -130,8 +167,6 @@ static int probe(struct pci_dev *pdev, const struct pci_device_id *id)
         if (!dev->mmio)
             goto error4;
 
-        // DMA stuff here!
-
         pci_set_master(pdev);
 
         if (request_irq(pdev->irq, &sxs_irq, IRQF_SHARED, DRV_NAME, dev))
@@ -140,6 +175,9 @@ static int probe(struct pci_dev *pdev, const struct pci_device_id *id)
         if( boot_check(dev) < 0)
             goto error7;
 
+        init_completion(&dev->irq_response);
+
+        setup_card(dev);
         pci_set_drvdata(pdev, dev);
 
         printk(KERN_DEBUG"sxs driver successfully loaded\n");
