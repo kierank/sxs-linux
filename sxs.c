@@ -52,12 +52,11 @@ static void read_response_buf(void __iomem *mmio, u32 *output)
         memcpy_fromio(output, mmio+SXS_RESPONSE_BUF, 4*4);
 }
 
-static int is_write_protected(struct pci_dev *pdev)
+static int is_write_protected(struct sxs_device *dev)
 {
         u32 status;
-        struct sxs_device *dev = pci_get_drvdata(pdev);
 
-        status = le32_to_cpu(readl(dev->mmio+SXS_STATUS_REG));
+        status = readl(dev->mmio+SXS_STATUS_REG);
 
         return (status >> 8) & 1;
 }
@@ -69,15 +68,15 @@ static int boot_check(struct sxs_device *dev)
         u32 status;
         u32 output[4];
 
-        status = le32_to_cpu(readl(dev->mmio+SXS_STATUS_REG));
+        status = readl(dev->mmio+SXS_STATUS_REG);
         printk(KERN_DEBUG"STATUS: %x", status );
 
         if ((status & 0xa0) != 0xa0) {
                 if ((status & 0xff) == 0x20)
-                        writel(cpu_to_le32(1), dev->mmio+SXS_CONTROL_REG);
+                        writel(1, dev->mmio+SXS_CONTROL_REG);
 
                 for (i = 0; i < 40; i++) {
-                        status = le32_to_cpu(readl(dev->mmio+SXS_STATUS_REG));
+                        status = readl(dev->mmio+SXS_STATUS_REG);
                         if (status & 0x80)
                             break;
                         msleep(100);
@@ -103,10 +102,10 @@ static irqreturn_t sxs_irq(int irq, void *data)
 
         spin_lock_irqsave(&dev->lock, flags);
 
-        status = le32_to_cpu(readl(dev->mmio+SXS_STATUS_REG));
+        status = readl(dev->mmio+SXS_STATUS_REG);
 
         if (status != 0x80000000)
-            writel(cpu_to_le32(0x80000000), dev->mmio+SXS_STATUS_REG);
+            writel(0x80000000, dev->mmio+SXS_STATUS_REG);
 
         printk(KERN_DEBUG"IRQ\n");
 
@@ -123,14 +122,11 @@ static void setup_card(struct sxs_device *dev)
         u32 data[4];
 
         status = readl(dev->mmio+SXS_STATUS_REG);
-        data[0] = 0;
-        data[1] = 0;
-        data[2] = 0;
-        data[3] = 0;
+        memset(data, 0, sizeof(data));
 
         memcpy_toio(dev->mmio, data, 4*4);
-        writel(cpu_to_le32(0xa0), dev->mmio+SXS_ENABLE_REG);
-        writel(cpu_to_le32(0x80), dev->mmio+SXS_CONTROL_REG);
+        writel(0xa0, dev->mmio+SXS_ENABLE_REG);
+        writel(0x80, dev->mmio+SXS_CONTROL_REG);
 
         if (!wait_for_completion_timeout(&dev->irq_response, msecs_to_jiffies(1000))) {
                 printk(KERN_DEBUG"No IRQ\n");
