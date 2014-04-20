@@ -1,3 +1,16 @@
+/*
+ *  sxs.c: Driver for Sony SxS cards
+ *
+ *  Copyright 2014 Kieran Kunhya
+ *
+ *  Author/maintainer:  Kieran Kunhya <kieran@kunhya.com>
+ *
+ *  This file is subject to the terms and conditions of the GNU General Public
+ *  License.  See the file "COPYING" in the main directory of this archive
+ *  for more details.
+ */
+
+
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/interrupt.h>
