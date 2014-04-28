@@ -235,7 +235,7 @@ static int boot_check(struct sxs_device *dev)
         printk(KERN_DEBUG"STATUS: %x", status );
 
         if ((status & 0xa0) != 0xa0) {
-                if ((status & 0xff) == 0x20)
+                if ((status & 0xff) != 0x20)
                         writel(1, dev->mmio+SXS_CONTROL_REG);
 
                 for (i = 0; i < 40; i++) {
