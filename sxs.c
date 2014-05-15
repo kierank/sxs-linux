@@ -30,6 +30,7 @@
 #define DRV_NAME "sxs"
 
 #define PCI_DEVICE_ID_SXS_81CE 0x81ce
+#define PCI_DEVICE_ID_SXS_905C 0x905c
 
 #define SXS_MASTER_LINK_REG_L 0x10
 #define SXS_MASTER_LINK_REG_H 0x14
@@ -44,7 +45,8 @@
 #define KERNEL_SECTOR_SIZE 512
 
 static struct pci_device_id ids[] = {
-        { PCI_DEVICE(PCI_VENDOR_ID_SONY, PCI_DEVICE_ID_SXS_81CE), },
+        { PCI_DEVICE(PCI_VENDOR_ID_SONY, PCI_DEVICE_ID_SXS_81CE),
+          PCI_DEVICE(PCI_VENDOR_ID_SONY, PCI_DEVICE_ID_SXS_905C),},
         { 0, }
 };
 MODULE_DEVICE_TABLE(pci, ids);
