@@ -43,6 +43,7 @@
 #define SXS_RESPONSE_BUF 0x40
 
 #define KERNEL_SECTOR_SIZE 512
+#define MAX_SEGMENTS 1
 
 static struct pci_device_id ids[] = {
         { PCI_DEVICE(PCI_VENDOR_ID_SONY, PCI_DEVICE_ID_SXS_81CE), },
@@ -70,7 +71,6 @@ static int sxs_getgeo(struct block_device *bdev, struct hd_geometry *geo)
         struct sxs_device *dev = bdev->bd_disk->private_data;
         long size;
 
-// FIXME
         size = dev->num_sectors*(dev->sector_size/KERNEL_SECTOR_SIZE);
         geo->cylinders = (size & ~0x3f) >> 6;
         geo->heads = 4;
@@ -84,8 +84,8 @@ static const struct block_device_operations sxs_opts = {
         .getgeo         = sxs_getgeo
 };
 
-static void test_read(struct sxs_device *dev, unsigned long sector,
-                      unsigned long nsect, char *buffer)
+static void test_read(struct sxs_device *dev, struct request *rq,
+                      struct scatterlist *sg, int direction)
 {
         struct pci_dev *pdev = dev->pci_dev;
         u32 status;
@@ -93,26 +93,32 @@ static void test_read(struct sxs_device *dev, unsigned long sector,
         u16 *tmp;
         u32 *tmp2;
 
-        void *dma2;
-        dma_addr_t dma2_handle;
         void *dma3;
         dma_addr_t dma3_handle;
+
+        dma_addr_t sg_addr;
+
+        sector_t sector;
+        unsigned nsect;
+
+        sector = blk_rq_pos(rq);
+        nsect = blk_rq_cur_sectors(rq);
 
         // FIXME!!!
         sector >>= 2;
         nsect >>= 2;
 
         /* Read */
-        dma2 = pci_alloc_consistent(pdev, 8192, &dma2_handle);
-        memset(dma2, 0, 8192);
-
         dma3 = pci_alloc_consistent(pdev, 8192, &dma3_handle);
         memset(dma3, 0, 8192);
 
-        tmp = dma2;
+        sg_addr = sg_dma_address(&sg[0]);
+
         tmp2 = dma3;
-        tmp2[0] = dma2_handle;
-        tmp2[2] = dma3_handle;
+        tmp2[0] = sg_addr;
+        tmp = sg_addr;
+
+        printk(KERN_INFO" %x ", sg_dma_len(&sg[0]) );
 
         if (printk_ratelimit())
                 printk(KERN_INFO"CALL %i %i \n", sector & 0xffffffff, nsect & 0xffffffff);
@@ -140,36 +146,48 @@ static void test_read(struct sxs_device *dev, unsigned long sector,
                 printk(KERN_DEBUG"No IRQ\n");
         }
 
-        memcpy(buffer, dma2, dev->sector_size * nsect);
-
         if (printk_ratelimit())
-            printk(KERN_DEBUG"offset %x \n", tmp[255]);
+                printk(KERN_DEBUG"offset %x \n", tmp[255]);
 
         writel(0, dev->mmio+SXS_ENABLE_REG);
 
         pci_free_consistent(pdev, 8192, dma3, dma3_handle);
-        pci_free_consistent(pdev, 8192, dma2, dma2_handle);
 }
 
-static void sxs_request(struct request_queue *q, struct bio *bio)
+static void sxs_request(struct request_queue *q)
 {
-        int i;
-        struct bio_vec *bvec;
-        char *buffer;
         unsigned long flags;
         struct sxs_device *dev = q->queuedata;
-        sector_t sector = bio->bi_sector;
+        struct request *rq;
+        struct scatterlist sg;
+        int pci_dir, n_elem, n_elem_pci;
 
-        bio_for_each_segment(bvec, bio, i) {
-            if (printk_ratelimit())
-                    printk(KERN_INFO"REQUEST %i %i %i \n", bio_cur_bytes(bio), bio->bi_vcnt, bvec->bv_len);
-            buffer = bvec_kmap_irq(bvec, &flags);
-            test_read(dev, sector, bio_cur_bytes(bio) >> 9, buffer);
-            sector += bio_cur_bytes(bio) >> 9;
-            bvec_kunmap_irq(buffer, &flags);
+        while (1){
+                rq = blk_peek_request(q);
+                if (!rq)
+                        return;
+                blk_start_request(rq);
+
+                if (rq_data_dir(rq) == WRITE)
+                    pci_dir = PCI_DMA_TODEVICE;
+                else
+                    pci_dir = PCI_DMA_FROMDEVICE;
+
+                n_elem = blk_rq_map_sg(q, rq, &sg);
+                if (n_elem <= 0)
+                        return;
+
+                n_elem_pci = pci_map_sg(dev->pci_dev, &sg, n_elem, pci_dir);
+                if (n_elem_pci <= 0)
+                        return;
+
+                printk(KERN_INFO" %i %i ", n_elem, n_elem_pci );
+
+                //test_read(dev, rq, &sg, rq_data_dir(rq) == WRITE);
+
+                pci_unmap_sg(dev->pci_dev, &sg, n_elem, pci_dir);
         }
 
-        bio_endio(bio, 0);
 }
 
 static int setup_disk(struct sxs_device *dev)
@@ -182,18 +200,18 @@ static int setup_disk(struct sxs_device *dev)
                 goto end;
         }
 
-        dev->queue = blk_alloc_queue(GFP_KERNEL);
+        dev->queue = blk_init_queue(sxs_request, &dev->lock);
         if (!dev->queue) {
                 ret = -ENOMEM;
                 goto end;
         }
 
-        blk_queue_make_request(dev->queue, sxs_request);
         blk_queue_logical_block_size(dev->queue, dev->sector_size);
+        blk_queue_max_segments(dev->queue, MAX_SEGMENTS);
         dev->queue->queuedata = dev;
 
         // FIXME what goes here
-        dev->disk = alloc_disk(2);
+        dev->disk = alloc_disk(4);
         if (!dev->disk) {
             printk (KERN_NOTICE "could not allocate disk\n");
             goto end;
@@ -390,27 +408,27 @@ static int probe(struct pci_dev *pdev, const struct pci_device_id *id)
         pci_set_master(pdev);
 
         if (request_irq(pdev->irq, &sxs_irq, IRQF_SHARED, DRV_NAME, dev))
-                goto error6;
+                goto error5;
 
         if( boot_check(dev) < 0)
-                goto error7;
+                goto error6;
 
         init_completion(&dev->irq_response);
 
         setup_card(dev);
 
         if (get_size(dev) < 0)
-                goto error7;
+                goto error6;
 
         if (setup_disk(dev) < 0)
-                goto error8;
+                goto error7;
 
         pci_set_drvdata(pdev, dev);
 
         printk(KERN_DEBUG"sxs driver successfully loaded\n");
         return 0;
 
-error8:
+error7:
         if (dev->sxs_major)
             unregister_blkdev(dev->sxs_major, "sxs");
 
@@ -421,10 +439,8 @@ error8:
 
         if(dev->queue)
             blk_cleanup_queue(dev->queue);
-error7:
-        free_irq(pdev->irq, dev);
 error6:
-        // FIXME
+        free_irq(pdev->irq, dev);
 error5:
         iounmap(dev->mmio);
 error4:
