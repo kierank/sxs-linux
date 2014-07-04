@@ -390,27 +390,27 @@ static int probe(struct pci_dev *pdev, const struct pci_device_id *id)
         pci_set_master(pdev);
 
         if (request_irq(pdev->irq, &sxs_irq, IRQF_SHARED, DRV_NAME, dev))
-                goto error6;
+                goto error5;
 
         if( boot_check(dev) < 0)
-                goto error7;
+                goto error6;
 
         init_completion(&dev->irq_response);
 
         setup_card(dev);
 
         if (get_size(dev) < 0)
-                goto error7;
+                goto error6;
 
         if (setup_disk(dev) < 0)
-                goto error8;
+                goto error7;
 
         pci_set_drvdata(pdev, dev);
 
         printk(KERN_DEBUG"sxs driver successfully loaded\n");
         return 0;
 
-error8:
+error7:
         if (dev->sxs_major)
             unregister_blkdev(dev->sxs_major, "sxs");
 
@@ -421,10 +421,8 @@ error8:
 
         if(dev->queue)
             blk_cleanup_queue(dev->queue);
-error7:
-        free_irq(pdev->irq, dev);
 error6:
-        // FIXME
+        free_irq(pdev->irq, dev);
 error5:
         iounmap(dev->mmio);
 error4:
