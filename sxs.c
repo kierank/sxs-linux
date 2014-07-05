@@ -24,6 +24,7 @@
 
 #include <linux/completion.h>
 #include <linux/dma-mapping.h>
+#include <linux/log2.h>
 
 #include <asm/byteorder.h>
 
@@ -60,6 +61,7 @@ struct sxs_device {
         struct gendisk *disk;
         int    sector_size;
         int    num_sectors;
+        int    sector_shift;
         struct request_queue *queue;
 
         struct completion irq_response;
@@ -70,7 +72,7 @@ static int sxs_getgeo(struct block_device *bdev, struct hd_geometry *geo)
         struct sxs_device *dev = bdev->bd_disk->private_data;
         long size;
 
-// FIXME
+        /* Make something up here */
         size = dev->num_sectors*(dev->sector_size/KERNEL_SECTOR_SIZE);
         geo->cylinders = (size & ~0x3f) >> 6;
         geo->heads = 4;
@@ -98,9 +100,8 @@ static void test_read(struct sxs_device *dev, unsigned long sector,
         void *dma3;
         dma_addr_t dma3_handle;
 
-        // FIXME!!!
-        sector >>= 2;
-        nsect >>= 2;
+        sector >>= dev->sector_shift;
+        nsect >>= dev->sector_shift;
 
         /* Read */
         dma2 = pci_alloc_consistent(pdev, 8192, &dma2_handle);
@@ -115,14 +116,14 @@ static void test_read(struct sxs_device *dev, unsigned long sector,
         tmp2[2] = dma3_handle;
 
         if (printk_ratelimit())
-                printk(KERN_INFO"CALL %i %i \n", sector & 0xffffffff, nsect & 0xffffffff);
+                printk(KERN_INFO"CALL %lu %lu \n", sector & 0xffffffff, nsect & 0xffffffff);
 
         INIT_COMPLETION(dev->irq_response);
         status = readl(dev->mmio+SXS_STATUS_REG);
-        data[0] = 0x00010028;
-        data[1] = sector & 0xffffffff;
+        data[0] = cpu_to_le32(0x00010028);
+        data[1] = cpu_to_le32(sector & 0xffffffff);
         data[2] = 0x0;
-        data[3] = nsect & 0xffffffff;
+        data[3] = cpu_to_le32(nsect & 0xffffffff);
         memcpy_toio(dev->mmio, data, sizeof(data));
         writel(0xa0, dev->mmio+SXS_ENABLE_REG);
         writel(0x80, dev->mmio+SXS_CONTROL_REG);
@@ -140,6 +141,7 @@ static void test_read(struct sxs_device *dev, unsigned long sector,
                 printk(KERN_DEBUG"No IRQ\n");
         }
 
+        /* FIXME: Use DMA properly */
         memcpy(buffer, dma2, dev->sector_size * nsect);
 
         if (printk_ratelimit())
@@ -192,8 +194,8 @@ static int setup_disk(struct sxs_device *dev)
         blk_queue_logical_block_size(dev->queue, dev->sector_size);
         dev->queue->queuedata = dev;
 
-        // FIXME what goes here
-        dev->disk = alloc_disk(2);
+        /* XXX: can SxS have more partitions? */
+        dev->disk = alloc_disk(4);
         if (!dev->disk) {
             printk (KERN_NOTICE "could not allocate disk\n");
             goto end;
@@ -203,7 +205,6 @@ static int setup_disk(struct sxs_device *dev)
         dev->disk->fops = &sxs_opts;
         dev->disk->queue = dev->queue;
         dev->disk->private_data = dev;
-        // FIXME this is broken
         snprintf(dev->disk->disk_name, 32, "sxs");
         set_capacity(dev->disk, dev->num_sectors*(dev->sector_size/KERNEL_SECTOR_SIZE));
         add_disk(dev->disk);
@@ -317,10 +318,10 @@ static int get_size(struct sxs_device *dev)
 
         INIT_COMPLETION(dev->irq_response);
         status = readl(dev->mmio+SXS_STATUS_REG);
-        data[0] = 0x8;
+        data[0] = cpu_to_le32(0x8);
         data[1] = 0x0;
         data[2] = 0x0;
-        data[3] = 0x1;
+        data[3] = cpu_to_le32(0x1);
         memcpy_toio(dev->mmio, data, sizeof(data));
         writel(0xa0, dev->mmio+SXS_ENABLE_REG);
         writel(0x80, dev->mmio+SXS_CONTROL_REG);
@@ -346,10 +347,10 @@ static int get_size(struct sxs_device *dev)
 
         writel(0, dev->mmio+SXS_ENABLE_REG);
 
-        /* FIXME: this might be different for larger disks */
-        // FIXME endian
-        dev->sector_size = tmp2[8] & 0xffff;
-        dev->num_sectors = tmp2[9] * tmp2[10];
+        /* XXX: this might be different for larger disks */
+        dev->sector_size = le32_to_cpu(tmp2[8]) & 0xffff;
+        dev->num_sectors = le32_to_cpu(tmp2[9]) * le32_to_cpu(tmp2[10]);
+        dev->sector_shift = ilog2(dev->sector_size / KERNEL_SECTOR_SIZE);
         printk(KERN_DEBUG"Sector size: %x Num sectors: %x \n", dev->sector_size, dev->num_sectors);
 
 error1:
