@@ -130,7 +130,7 @@ static void test_read(struct sxs_device *dev, unsigned long sector,
 
 	if (!wait_for_completion_timeout(&dev->irq_response,
 					 msecs_to_jiffies(5000))) {
-		printk(KERN_DEBUG"No IRQ\n");
+		pr_debug("No IRQ\n");
 	}
 
 	INIT_COMPLETION(dev->irq_response);
@@ -140,13 +140,13 @@ static void test_read(struct sxs_device *dev, unsigned long sector,
 
 	if (!wait_for_completion_timeout(&dev->irq_response,
 					 msecs_to_jiffies(5000))) {
-		printk(KERN_DEBUG"No IRQ\n");
+		pr_debug("No IRQ\n");
 	}
 
 	/* FIXME: Use DMA properly */
 	memcpy(buffer, dma2, dev->sector_size * nsect);
 
-	printk_ratelimited(KERN_DEBUG"offset %x \n", tmp[255]);
+	printk_ratelimited(KERN_DEBUG"boot-signature %x\n", tmp[255]);
 
 	writel(0, dev->mmio+SXS_ENABLE_REG);
 
@@ -199,8 +199,8 @@ static int setup_disk(struct sxs_device *dev)
 	/* XXX: can SxS have more partitions? */
 	dev->disk = alloc_disk(4);
 	if (!dev->disk) {
-	    printk (KERN_NOTICE "could not allocate disk\n");
-	    goto end;
+		pr_notice("could not allocate disk\n");
+		goto end;
 	}
 	dev->disk->major = dev->sxs_major;
 	dev->disk->first_minor = 0;
@@ -239,7 +239,7 @@ static int boot_check(struct sxs_device *dev)
 	u32 output[4];
 
 	status = readl(dev->mmio+SXS_STATUS_REG);
-	printk(KERN_DEBUG"STATUS: %x", status);
+	pr_debug("STATUS: %x", status);
 
 	if ((status & 0xa0) != 0xa0) {
 		if ((status & 0xff) != 0x20)
@@ -248,7 +248,7 @@ static int boot_check(struct sxs_device *dev)
 		for (i = 0; i < 40; i++) {
 			status = readl(dev->mmio+SXS_STATUS_REG);
 			if (status & 0x80)
-			    break;
+				break;
 			msleep(100);
 		}
 		if (i == 40)
@@ -256,7 +256,7 @@ static int boot_check(struct sxs_device *dev)
 		else {
 			read_response_buf(dev->mmio, output);
 			/* Not clear what these values mean */
-			printk(KERN_DEBUG"Boot Response %x %x %x %x \n",
+			pr_debug("Boot Response %x %x %x %x \n",
 			       output[0], output[1],
 			       output[2], output[3]);
 		}
@@ -277,7 +277,7 @@ static irqreturn_t sxs_irq(int irq, void *data)
 	status = readl(dev->mmio+SXS_STATUS_REG);
 
 	if (status != 0x80000000)
-	    writel(0x80000000, dev->mmio+SXS_STATUS_REG);
+		writel(0x80000000, dev->mmio+SXS_STATUS_REG);
 
 	printk_ratelimited(KERN_DEBUG"IRQ\n");
 
@@ -302,7 +302,7 @@ static void setup_card(struct sxs_device *dev)
 
 	if (!wait_for_completion_timeout(&dev->irq_response,
 					 msecs_to_jiffies(1000))) {
-		printk(KERN_DEBUG"No IRQ\n");
+		pr_debug("No IRQ\n");
 	}
 
 	writel(0, dev->mmio+SXS_ENABLE_REG);
@@ -334,7 +334,7 @@ static int get_size(struct sxs_device *dev)
 
 	if (!wait_for_completion_timeout(&dev->irq_response,
 					 msecs_to_jiffies(1000))) {
-		printk(KERN_DEBUG"No IRQ\n");
+		pr_debug("No IRQ\n");
 		return -EIO;
 	}
 
@@ -346,7 +346,7 @@ static int get_size(struct sxs_device *dev)
 
 	if (!wait_for_completion_timeout(&dev->irq_response,
 	                                 msecs_to_jiffies(1000))) {
-		printk(KERN_DEBUG"No IRQ\n");
+		pr_debug("No IRQ\n");
 		ret = -EIO;
 		goto error1;
 	}
@@ -360,8 +360,8 @@ static int get_size(struct sxs_device *dev)
 	dev->num_sectors = le32_to_cpu(tmp2[9]) * le32_to_cpu(tmp2[10]);
 	dev->sector_shift = ilog2(dev->sector_size /
 	                          KERNEL_SECTOR_SIZE);
-	printk(KERN_DEBUG"Sector size: %x Num sectors: %x \n",
-	       dev->sector_size, dev->num_sectors);
+	pr_debug("Sector size: %x Num sectors: %x\n",
+		 dev->sector_size, dev->num_sectors);
 
 error1:
 	pci_free_consistent(pdev, 8192, dma, dma_handle);
@@ -418,7 +418,7 @@ static int probe(struct pci_dev *pdev, const struct pci_device_id *id)
 
 	pci_set_drvdata(pdev, dev);
 
-	printk(KERN_DEBUG"sxs driver successfully loaded\n");
+	pr_debug("sxs driver successfully loaded\n");
 	return 0;
 
 error7:
