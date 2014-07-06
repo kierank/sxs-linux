@@ -46,432 +46,432 @@
 #define KERNEL_SECTOR_SIZE 512
 
 static struct pci_device_id ids[] = {
-        { PCI_DEVICE(PCI_VENDOR_ID_SONY, PCI_DEVICE_ID_SXS_81CE), },
-        { PCI_DEVICE(PCI_VENDOR_ID_SONY, PCI_DEVICE_ID_SXS_905C), },
-        { 0, }
+	{ PCI_DEVICE(PCI_VENDOR_ID_SONY, PCI_DEVICE_ID_SXS_81CE), },
+	{ PCI_DEVICE(PCI_VENDOR_ID_SONY, PCI_DEVICE_ID_SXS_905C), },
+	{ 0, }
 };
 MODULE_DEVICE_TABLE(pci, ids);
 
 struct sxs_device {
-        struct pci_dev *pci_dev;
-        spinlock_t lock;
-        void __iomem *mmio;
+	struct pci_dev *pci_dev;
+	spinlock_t lock;
+	void __iomem *mmio;
 
-        int    sxs_major;
-        struct gendisk *disk;
-        int    sector_size;
-        int    num_sectors;
-        int    sector_shift;
-        struct request_queue *queue;
+	int    sxs_major;
+	struct gendisk *disk;
+	int    sector_size;
+	int    num_sectors;
+	int    sector_shift;
+	struct request_queue *queue;
 
-        struct completion irq_response;
+	struct completion irq_response;
 };
 
 static int sxs_getgeo(struct block_device *bdev, struct hd_geometry *geo)
 {
-        struct sxs_device *dev = bdev->bd_disk->private_data;
-        long size;
+	struct sxs_device *dev = bdev->bd_disk->private_data;
+	long size;
 
-        /* Make something up here */
-        size = dev->num_sectors*(dev->sector_size/KERNEL_SECTOR_SIZE);
-        geo->cylinders = (size & ~0x3f) >> 6;
-        geo->heads = 4;
-        geo->sectors = 16;
+	/* Make something up here */
+	size = dev->num_sectors*(dev->sector_size/KERNEL_SECTOR_SIZE);
+	geo->cylinders = (size & ~0x3f) >> 6;
+	geo->heads = 4;
+	geo->sectors = 16;
 
-        return 0;
+	return 0;
 }
 
 static const struct block_device_operations sxs_opts = {
-        .owner          = THIS_MODULE,
-        .getgeo         = sxs_getgeo
+	.owner          = THIS_MODULE,
+	.getgeo         = sxs_getgeo
 };
 
 static void test_read(struct sxs_device *dev, unsigned long sector,
-                      unsigned long nsect, char *buffer)
+		      unsigned long nsect, char *buffer)
 {
-        struct pci_dev *pdev = dev->pci_dev;
-        u32 status;
-        u32 data[4];
-        u16 *tmp;
-        u32 *tmp2;
+	struct pci_dev *pdev = dev->pci_dev;
+	u32 status;
+	u32 data[4];
+	u16 *tmp;
+	u32 *tmp2;
 
-        void *dma2;
-        dma_addr_t dma2_handle;
-        void *dma3;
-        dma_addr_t dma3_handle;
+	void *dma2;
+	dma_addr_t dma2_handle;
+	void *dma3;
+	dma_addr_t dma3_handle;
 
-        sector >>= dev->sector_shift;
-        nsect >>= dev->sector_shift;
+	sector >>= dev->sector_shift;
+	nsect >>= dev->sector_shift;
 
-        /* Read */
-        dma2 = pci_alloc_consistent(pdev, 8192, &dma2_handle);
-        memset(dma2, 0, 8192);
+	/* Read */
+	dma2 = pci_alloc_consistent(pdev, 8192, &dma2_handle);
+	memset(dma2, 0, 8192);
 
-        dma3 = pci_alloc_consistent(pdev, 8192, &dma3_handle);
-        memset(dma3, 0, 8192);
+	dma3 = pci_alloc_consistent(pdev, 8192, &dma3_handle);
+	memset(dma3, 0, 8192);
 
-        tmp = dma2;
-        tmp2 = dma3;
-        tmp2[0] = dma2_handle;
-        tmp2[2] = dma3_handle;
+	tmp = dma2;
+	tmp2 = dma3;
+	tmp2[0] = dma2_handle;
+	tmp2[2] = dma3_handle;
 
-        if (printk_ratelimit())
-                printk(KERN_INFO"CALL %lu %lu \n", sector & 0xffffffff, nsect & 0xffffffff);
+	if (printk_ratelimit())
+		printk(KERN_INFO"CALL %lu %lu \n", sector & 0xffffffff, nsect & 0xffffffff);
 
-        INIT_COMPLETION(dev->irq_response);
-        status = readl(dev->mmio+SXS_STATUS_REG);
-        data[0] = cpu_to_le32(0x00010028);
-        data[1] = cpu_to_le32(sector & 0xffffffff);
-        data[2] = 0x0;
-        data[3] = cpu_to_le32(nsect & 0xffffffff);
-        memcpy_toio(dev->mmio, data, sizeof(data));
-        writel(0xa0, dev->mmio+SXS_ENABLE_REG);
-        writel(0x80, dev->mmio+SXS_CONTROL_REG);
+	INIT_COMPLETION(dev->irq_response);
+	status = readl(dev->mmio+SXS_STATUS_REG);
+	data[0] = cpu_to_le32(0x00010028);
+	data[1] = cpu_to_le32(sector & 0xffffffff);
+	data[2] = 0x0;
+	data[3] = cpu_to_le32(nsect & 0xffffffff);
+	memcpy_toio(dev->mmio, data, sizeof(data));
+	writel(0xa0, dev->mmio+SXS_ENABLE_REG);
+	writel(0x80, dev->mmio+SXS_CONTROL_REG);
 
-        if (!wait_for_completion_timeout(&dev->irq_response, msecs_to_jiffies(5000))) {
-                printk(KERN_DEBUG"No IRQ\n");
-        }
+	if (!wait_for_completion_timeout(&dev->irq_response, msecs_to_jiffies(5000))) {
+		printk(KERN_DEBUG"No IRQ\n");
+	}
 
-        INIT_COMPLETION(dev->irq_response);
-        writel(dma3_handle, dev->mmio+SXS_MASTER_LINK_REG_L);
-        writel(0x0, dev->mmio+SXS_MASTER_LINK_REG_H);
-        writel(0x20, dev->mmio+SXS_CONTROL_REG);
+	INIT_COMPLETION(dev->irq_response);
+	writel(dma3_handle, dev->mmio+SXS_MASTER_LINK_REG_L);
+	writel(0x0, dev->mmio+SXS_MASTER_LINK_REG_H);
+	writel(0x20, dev->mmio+SXS_CONTROL_REG);
 
-        if (!wait_for_completion_timeout(&dev->irq_response, msecs_to_jiffies(5000))) {
-                printk(KERN_DEBUG"No IRQ\n");
-        }
+	if (!wait_for_completion_timeout(&dev->irq_response, msecs_to_jiffies(5000))) {
+		printk(KERN_DEBUG"No IRQ\n");
+	}
 
-        /* FIXME: Use DMA properly */
-        memcpy(buffer, dma2, dev->sector_size * nsect);
+	/* FIXME: Use DMA properly */
+	memcpy(buffer, dma2, dev->sector_size * nsect);
 
-        if (printk_ratelimit())
-            printk(KERN_DEBUG"offset %x \n", tmp[255]);
+	if (printk_ratelimit())
+	    printk(KERN_DEBUG"offset %x \n", tmp[255]);
 
-        writel(0, dev->mmio+SXS_ENABLE_REG);
+	writel(0, dev->mmio+SXS_ENABLE_REG);
 
-        pci_free_consistent(pdev, 8192, dma3, dma3_handle);
-        pci_free_consistent(pdev, 8192, dma2, dma2_handle);
+	pci_free_consistent(pdev, 8192, dma3, dma3_handle);
+	pci_free_consistent(pdev, 8192, dma2, dma2_handle);
 }
 
 static void sxs_request(struct request_queue *q, struct bio *bio)
 {
-        int i;
-        struct bio_vec *bvec;
-        char *buffer;
-        unsigned long flags;
-        struct sxs_device *dev = q->queuedata;
-        sector_t sector = bio->bi_sector;
+	int i;
+	struct bio_vec *bvec;
+	char *buffer;
+	unsigned long flags;
+	struct sxs_device *dev = q->queuedata;
+	sector_t sector = bio->bi_sector;
 
-        bio_for_each_segment(bvec, bio, i) {
-            if (printk_ratelimit())
-                    printk(KERN_INFO"REQUEST %i %i %i \n", bio_cur_bytes(bio), bio->bi_vcnt, bvec->bv_len);
-            buffer = bvec_kmap_irq(bvec, &flags);
-            test_read(dev, sector, bio_cur_bytes(bio) >> 9, buffer);
-            sector += bio_cur_bytes(bio) >> 9;
-            bvec_kunmap_irq(buffer, &flags);
-        }
+	bio_for_each_segment(bvec, bio, i) {
+	    if (printk_ratelimit())
+		    printk(KERN_INFO"REQUEST %i %i %i \n", bio_cur_bytes(bio), bio->bi_vcnt, bvec->bv_len);
+	    buffer = bvec_kmap_irq(bvec, &flags);
+	    test_read(dev, sector, bio_cur_bytes(bio) >> 9, buffer);
+	    sector += bio_cur_bytes(bio) >> 9;
+	    bvec_kunmap_irq(buffer, &flags);
+	}
 
-        bio_endio(bio, 0);
+	bio_endio(bio, 0);
 }
 
 static int setup_disk(struct sxs_device *dev)
 {
-        int ret = 0;
+	int ret = 0;
 
-        dev->sxs_major = register_blkdev(0, "sxs");
-        if (!dev->sxs_major) {
-                ret = -EBUSY;
-                goto end;
-        }
+	dev->sxs_major = register_blkdev(0, "sxs");
+	if (!dev->sxs_major) {
+		ret = -EBUSY;
+		goto end;
+	}
 
-        dev->queue = blk_alloc_queue(GFP_KERNEL);
-        if (!dev->queue) {
-                ret = -ENOMEM;
-                goto end;
-        }
+	dev->queue = blk_alloc_queue(GFP_KERNEL);
+	if (!dev->queue) {
+		ret = -ENOMEM;
+		goto end;
+	}
 
-        blk_queue_make_request(dev->queue, sxs_request);
-        blk_queue_logical_block_size(dev->queue, dev->sector_size);
-        dev->queue->queuedata = dev;
+	blk_queue_make_request(dev->queue, sxs_request);
+	blk_queue_logical_block_size(dev->queue, dev->sector_size);
+	dev->queue->queuedata = dev;
 
-        /* XXX: can SxS have more partitions? */
-        dev->disk = alloc_disk(4);
-        if (!dev->disk) {
-            printk (KERN_NOTICE "could not allocate disk\n");
-            goto end;
-        }
-        dev->disk->major = dev->sxs_major;
-        dev->disk->first_minor = 0;
-        dev->disk->fops = &sxs_opts;
-        dev->disk->queue = dev->queue;
-        dev->disk->private_data = dev;
-        snprintf(dev->disk->disk_name, 32, "sxs");
-        set_capacity(dev->disk, dev->num_sectors*(dev->sector_size/KERNEL_SECTOR_SIZE));
-        add_disk(dev->disk);
+	/* XXX: can SxS have more partitions? */
+	dev->disk = alloc_disk(4);
+	if (!dev->disk) {
+	    printk (KERN_NOTICE "could not allocate disk\n");
+	    goto end;
+	}
+	dev->disk->major = dev->sxs_major;
+	dev->disk->first_minor = 0;
+	dev->disk->fops = &sxs_opts;
+	dev->disk->queue = dev->queue;
+	dev->disk->private_data = dev;
+	snprintf(dev->disk->disk_name, 32, "sxs");
+	set_capacity(dev->disk, dev->num_sectors*(dev->sector_size/KERNEL_SECTOR_SIZE));
+	add_disk(dev->disk);
 
 end:
-        return ret;
+	return ret;
 }
 
 static void read_response_buf(void __iomem *mmio, u32 *output)
 {
-        memcpy_fromio(output, mmio+SXS_RESPONSE_BUF, 4*4);
+	memcpy_fromio(output, mmio+SXS_RESPONSE_BUF, 4*4);
 }
 
 static int is_write_protected(struct sxs_device *dev)
 {
-        u32 status;
+	u32 status;
 
-        status = readl(dev->mmio+SXS_STATUS_REG);
+	status = readl(dev->mmio+SXS_STATUS_REG);
 
-        return (status >> 8) & 1;
+	return (status >> 8) & 1;
 }
 
 /* Setup the card exactly as the Windows driver does, even the strange parts! */
 static int boot_check(struct sxs_device *dev)
 {
-        int i, ret = 0;
-        u32 status;
-        u32 output[4];
+	int i, ret = 0;
+	u32 status;
+	u32 output[4];
 
-        status = readl(dev->mmio+SXS_STATUS_REG);
-        printk(KERN_DEBUG"STATUS: %x", status );
+	status = readl(dev->mmio+SXS_STATUS_REG);
+	printk(KERN_DEBUG"STATUS: %x", status );
 
-        if ((status & 0xa0) != 0xa0) {
-                if ((status & 0xff) != 0x20)
-                        writel(1, dev->mmio+SXS_CONTROL_REG);
+	if ((status & 0xa0) != 0xa0) {
+		if ((status & 0xff) != 0x20)
+			writel(1, dev->mmio+SXS_CONTROL_REG);
 
-                for (i = 0; i < 40; i++) {
-                        status = readl(dev->mmio+SXS_STATUS_REG);
-                        if (status & 0x80)
-                            break;
-                        msleep(100);
-                }
-                if (i == 40)
-                        ret = -EBUSY;
-                else {
-                        read_response_buf(dev->mmio, output);
-                        /* Not clear what these values mean */
-                        printk(KERN_DEBUG"Boot Response %x %x %x %x \n", output[0], output[1], output[2], output[3] );
-                }
-        }
+		for (i = 0; i < 40; i++) {
+			status = readl(dev->mmio+SXS_STATUS_REG);
+			if (status & 0x80)
+			    break;
+			msleep(100);
+		}
+		if (i == 40)
+			ret = -EBUSY;
+		else {
+			read_response_buf(dev->mmio, output);
+			/* Not clear what these values mean */
+			printk(KERN_DEBUG"Boot Response %x %x %x %x \n", output[0], output[1], output[2], output[3] );
+		}
+	}
 
-        return ret;
+	return ret;
 }
 
 static irqreturn_t sxs_irq(int irq, void *data)
 {
-        u32 status;
-        irqreturn_t ret = IRQ_HANDLED;
-        struct sxs_device *dev = data;
-        unsigned long flags;
+	u32 status;
+	irqreturn_t ret = IRQ_HANDLED;
+	struct sxs_device *dev = data;
+	unsigned long flags;
 
-        spin_lock_irqsave(&dev->lock, flags);
+	spin_lock_irqsave(&dev->lock, flags);
 
-        status = readl(dev->mmio+SXS_STATUS_REG);
+	status = readl(dev->mmio+SXS_STATUS_REG);
 
-        if (status != 0x80000000)
-            writel(0x80000000, dev->mmio+SXS_STATUS_REG);
+	if (status != 0x80000000)
+	    writel(0x80000000, dev->mmio+SXS_STATUS_REG);
 
-        if (printk_ratelimit())
-                printk(KERN_DEBUG"IRQ\n");
+	if (printk_ratelimit())
+		printk(KERN_DEBUG"IRQ\n");
 
-        spin_unlock_irqrestore(&dev->lock, flags);
+	spin_unlock_irqrestore(&dev->lock, flags);
 
-        complete(&dev->irq_response);
+	complete(&dev->irq_response);
 
-        return ret;
+	return ret;
 }
 
 static void setup_card(struct sxs_device *dev)
 {
-        u32 status;
-        u32 data[4];
+	u32 status;
+	u32 data[4];
 
-        status = readl(dev->mmio+SXS_STATUS_REG);
-        memset(data, 0, sizeof(data));
+	status = readl(dev->mmio+SXS_STATUS_REG);
+	memset(data, 0, sizeof(data));
 
-        memcpy_toio(dev->mmio, data, sizeof(data));
-        writel(0xa0, dev->mmio+SXS_ENABLE_REG);
-        writel(0x80, dev->mmio+SXS_CONTROL_REG);
+	memcpy_toio(dev->mmio, data, sizeof(data));
+	writel(0xa0, dev->mmio+SXS_ENABLE_REG);
+	writel(0x80, dev->mmio+SXS_CONTROL_REG);
 
-        if (!wait_for_completion_timeout(&dev->irq_response, msecs_to_jiffies(1000))) {
-                printk(KERN_DEBUG"No IRQ\n");
-        }
+	if (!wait_for_completion_timeout(&dev->irq_response, msecs_to_jiffies(1000))) {
+		printk(KERN_DEBUG"No IRQ\n");
+	}
 
-        writel(0, dev->mmio+SXS_ENABLE_REG);
+	writel(0, dev->mmio+SXS_ENABLE_REG);
 }
 
 static int get_size(struct sxs_device *dev)
 {
-        struct pci_dev *pdev = dev->pci_dev;
-        u32 status;
-        u32 data[4];
-        int ret = 0;
-        u32 *tmp2;
+	struct pci_dev *pdev = dev->pci_dev;
+	u32 status;
+	u32 data[4];
+	int ret = 0;
+	u32 *tmp2;
 
-        void *dma;
-        dma_addr_t dma_handle;
+	void *dma;
+	dma_addr_t dma_handle;
 
-        dma = pci_alloc_consistent(pdev, 8192, &dma_handle);
-        memset(dma, 0, 8192);
+	dma = pci_alloc_consistent(pdev, 8192, &dma_handle);
+	memset(dma, 0, 8192);
 
-        INIT_COMPLETION(dev->irq_response);
-        status = readl(dev->mmio+SXS_STATUS_REG);
-        data[0] = cpu_to_le32(0x8);
-        data[1] = 0x0;
-        data[2] = 0x0;
-        data[3] = cpu_to_le32(0x1);
-        memcpy_toio(dev->mmio, data, sizeof(data));
-        writel(0xa0, dev->mmio+SXS_ENABLE_REG);
-        writel(0x80, dev->mmio+SXS_CONTROL_REG);
+	INIT_COMPLETION(dev->irq_response);
+	status = readl(dev->mmio+SXS_STATUS_REG);
+	data[0] = cpu_to_le32(0x8);
+	data[1] = 0x0;
+	data[2] = 0x0;
+	data[3] = cpu_to_le32(0x1);
+	memcpy_toio(dev->mmio, data, sizeof(data));
+	writel(0xa0, dev->mmio+SXS_ENABLE_REG);
+	writel(0x80, dev->mmio+SXS_CONTROL_REG);
 
-        if (!wait_for_completion_timeout(&dev->irq_response, msecs_to_jiffies(1000))) {
-                printk(KERN_DEBUG"No IRQ\n");
-                return -EIO;
-        }
+	if (!wait_for_completion_timeout(&dev->irq_response, msecs_to_jiffies(1000))) {
+		printk(KERN_DEBUG"No IRQ\n");
+		return -EIO;
+	}
 
-        INIT_COMPLETION(dev->irq_response);
-        writel(dma_handle, dev->mmio+SXS_MASTER_ADDR_REG_L);
-        writel(0x0, dev->mmio+SXS_MASTER_ADDR_REG_H);
-        writel(0x800, dev->mmio+SXS_MASTER_SIZE_REG);
-        writel(0x20, dev->mmio+SXS_CONTROL_REG);
+	INIT_COMPLETION(dev->irq_response);
+	writel(dma_handle, dev->mmio+SXS_MASTER_ADDR_REG_L);
+	writel(0x0, dev->mmio+SXS_MASTER_ADDR_REG_H);
+	writel(0x800, dev->mmio+SXS_MASTER_SIZE_REG);
+	writel(0x20, dev->mmio+SXS_CONTROL_REG);
 
-        if (!wait_for_completion_timeout(&dev->irq_response, msecs_to_jiffies(1000))) {
-                printk(KERN_DEBUG"No IRQ\n");
-                ret = -EIO;
-                goto error1;
-        }
+	if (!wait_for_completion_timeout(&dev->irq_response, msecs_to_jiffies(1000))) {
+		printk(KERN_DEBUG"No IRQ\n");
+		ret = -EIO;
+		goto error1;
+	}
 
-        tmp2 = dma;
+	tmp2 = dma;
 
-        writel(0, dev->mmio+SXS_ENABLE_REG);
+	writel(0, dev->mmio+SXS_ENABLE_REG);
 
-        /* XXX: this might be different for larger disks */
-        dev->sector_size = le32_to_cpu(tmp2[8]) & 0xffff;
-        dev->num_sectors = le32_to_cpu(tmp2[9]) * le32_to_cpu(tmp2[10]);
-        dev->sector_shift = ilog2(dev->sector_size / KERNEL_SECTOR_SIZE);
-        printk(KERN_DEBUG"Sector size: %x Num sectors: %x \n", dev->sector_size, dev->num_sectors);
+	/* XXX: this might be different for larger disks */
+	dev->sector_size = le32_to_cpu(tmp2[8]) & 0xffff;
+	dev->num_sectors = le32_to_cpu(tmp2[9]) * le32_to_cpu(tmp2[10]);
+	dev->sector_shift = ilog2(dev->sector_size / KERNEL_SECTOR_SIZE);
+	printk(KERN_DEBUG"Sector size: %x Num sectors: %x \n", dev->sector_size, dev->num_sectors);
 
 error1:
-        pci_free_consistent(pdev, 8192, dma, dma_handle);
+	pci_free_consistent(pdev, 8192, dma, dma_handle);
 
-        return ret;
+	return ret;
 }
 
 static int probe(struct pci_dev *pdev, const struct pci_device_id *id)
 {
-        int error = 0;
-        struct sxs_device *dev;
+	int error = 0;
+	struct sxs_device *dev;
 
-        dev = kzalloc(sizeof(*dev), GFP_KERNEL);
-        if (!dev)
-                goto error1;
-        spin_lock_init(&dev->lock);
-        dev->pci_dev = pdev;
+	dev = kzalloc(sizeof(*dev), GFP_KERNEL);
+	if (!dev)
+		goto error1;
+	spin_lock_init(&dev->lock);
+	dev->pci_dev = pdev;
 
-        error = pci_enable_device(pdev);
-        if (error < 0)
-                goto error2;
+	error = pci_enable_device(pdev);
+	if (error < 0)
+		goto error2;
 
-        pci_enable_msi(pdev);
+	pci_enable_msi(pdev);
 
-        error = pci_set_dma_mask(pdev, DMA_BIT_MASK(32));
-        if (error)
-                goto error3;
+	error = pci_set_dma_mask(pdev, DMA_BIT_MASK(32));
+	if (error)
+		goto error3;
 
-        error = pci_request_regions(pdev, DRV_NAME);
-        if (error)
-                goto error3;
+	error = pci_request_regions(pdev, DRV_NAME);
+	if (error)
+		goto error3;
 
-        dev->mmio = pci_ioremap_bar(pdev, 0);
-        if (!dev->mmio)
-                goto error4;
+	dev->mmio = pci_ioremap_bar(pdev, 0);
+	if (!dev->mmio)
+		goto error4;
 
-        pci_set_master(pdev);
+	pci_set_master(pdev);
 
-        if (request_irq(pdev->irq, &sxs_irq, IRQF_SHARED, DRV_NAME, dev))
-                goto error5;
+	if (request_irq(pdev->irq, &sxs_irq, IRQF_SHARED, DRV_NAME, dev))
+		goto error5;
 
-        if( boot_check(dev) < 0)
-                goto error6;
+	if( boot_check(dev) < 0)
+		goto error6;
 
-        init_completion(&dev->irq_response);
+	init_completion(&dev->irq_response);
 
-        setup_card(dev);
+	setup_card(dev);
 
-        if (get_size(dev) < 0)
-                goto error6;
+	if (get_size(dev) < 0)
+		goto error6;
 
-        if (setup_disk(dev) < 0)
-                goto error7;
+	if (setup_disk(dev) < 0)
+		goto error7;
 
-        pci_set_drvdata(pdev, dev);
+	pci_set_drvdata(pdev, dev);
 
-        printk(KERN_DEBUG"sxs driver successfully loaded\n");
-        return 0;
+	printk(KERN_DEBUG"sxs driver successfully loaded\n");
+	return 0;
 
 error7:
-        if (dev->sxs_major)
-            unregister_blkdev(dev->sxs_major, "sxs");
+	if (dev->sxs_major)
+	    unregister_blkdev(dev->sxs_major, "sxs");
 
-        if (dev->disk) {
-            del_gendisk(dev->disk);
-            put_disk(dev->disk);
-        }
+	if (dev->disk) {
+	    del_gendisk(dev->disk);
+	    put_disk(dev->disk);
+	}
 
-        if(dev->queue)
-            blk_cleanup_queue(dev->queue);
+	if(dev->queue)
+	    blk_cleanup_queue(dev->queue);
 error6:
-        free_irq(pdev->irq, dev);
+	free_irq(pdev->irq, dev);
 error5:
-        iounmap(dev->mmio);
+	iounmap(dev->mmio);
 error4:
-        pci_release_regions(pdev);
+	pci_release_regions(pdev);
 error3:
-        pci_disable_device(pdev);
+	pci_disable_device(pdev);
 error2:
-        kfree(dev);
+	kfree(dev);
 error1:
-        return error;
+	return error;
 }
 
 static void remove(struct pci_dev *pdev)
 {
-        struct sxs_device *dev = pci_get_drvdata(pdev);
+	struct sxs_device *dev = pci_get_drvdata(pdev);
 
-        if (dev->sxs_major)
-            unregister_blkdev(dev->sxs_major, "sxs");
+	if (dev->sxs_major)
+	    unregister_blkdev(dev->sxs_major, "sxs");
 
-        if (dev->disk) {
-            del_gendisk(dev->disk);
-            put_disk(dev->disk);
-        }
-        if(dev->queue)
-            blk_cleanup_queue(dev->queue);
-        free_irq(pdev->irq, dev);
-        iounmap(dev->mmio);
-        pci_release_regions(pdev);
-        pci_disable_msi(pdev);
-        pci_disable_device(pdev);
-        kfree(dev);
+	if (dev->disk) {
+	    del_gendisk(dev->disk);
+	    put_disk(dev->disk);
+	}
+	if(dev->queue)
+	    blk_cleanup_queue(dev->queue);
+	free_irq(pdev->irq, dev);
+	iounmap(dev->mmio);
+	pci_release_regions(pdev);
+	pci_disable_msi(pdev);
+	pci_disable_device(pdev);
+	kfree(dev);
 }
 
 static struct pci_driver sxs_driver = {
-        .name = DRV_NAME,
-        .id_table = ids,
-        .probe = probe,
-        .remove = remove,
+	.name = DRV_NAME,
+	.id_table = ids,
+	.probe = probe,
+	.remove = remove,
 };
 
 static int __init sxs_init(void)
 {
-        return pci_register_driver(&sxs_driver);
+	return pci_register_driver(&sxs_driver);
 }
 
 static void __exit sxs_exit(void)
 {
-        pci_unregister_driver(&sxs_driver);
+	pci_unregister_driver(&sxs_driver);
 }
 
 MODULE_AUTHOR("Kieran Kunhya");
