@@ -115,7 +115,7 @@ static void test_read(struct sxs_device *dev, unsigned long sector,
 	tmp2[0] = dma2_handle;
 	tmp2[2] = dma3_handle;
 
-	printk_ratelimited(KERN_DEBUG"CALL %lu %lu \n",
+	printk_ratelimited(KERN_DEBUG"CALL %lu %lu\n",
 			   sector & 0xffffffff, nsect & 0xffffffff);
 
 	INIT_COMPLETION(dev->irq_response);
@@ -256,9 +256,9 @@ static int boot_check(struct sxs_device *dev)
 		else {
 			read_response_buf(dev->mmio, output);
 			/* Not clear what these values mean */
-			pr_debug("Boot Response %x %x %x %x \n",
-			       output[0], output[1],
-			       output[2], output[3]);
+			pr_debug("Boot Response %x %x %x %x\n",
+				 output[0], output[1],
+				 output[2], output[3]);
 		}
 	}
 
@@ -345,7 +345,7 @@ static int get_size(struct sxs_device *dev)
 	writel(0x20, dev->mmio+SXS_CONTROL_REG);
 
 	if (!wait_for_completion_timeout(&dev->irq_response,
-	                                 msecs_to_jiffies(1000))) {
+					 msecs_to_jiffies(1000))) {
 		pr_debug("No IRQ\n");
 		ret = -EIO;
 		goto error1;
@@ -359,7 +359,7 @@ static int get_size(struct sxs_device *dev)
 	dev->sector_size = le32_to_cpu(tmp2[8]) & 0xffff;
 	dev->num_sectors = le32_to_cpu(tmp2[9]) * le32_to_cpu(tmp2[10]);
 	dev->sector_shift = ilog2(dev->sector_size /
-	                          KERNEL_SECTOR_SIZE);
+				  KERNEL_SECTOR_SIZE);
 	pr_debug("Sector size: %x Num sectors: %x\n",
 		 dev->sector_size, dev->num_sectors);
 
