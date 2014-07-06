@@ -115,8 +115,8 @@ static void test_read(struct sxs_device *dev, unsigned long sector,
 	tmp2[0] = dma2_handle;
 	tmp2[2] = dma3_handle;
 
-	printk_ratelimited(KERN_INFO"CALL %lu %lu \n",
-	                   sector & 0xffffffff, nsect & 0xffffffff);
+	printk_ratelimited(KERN_DEBUG"CALL %lu %lu \n",
+			   sector & 0xffffffff, nsect & 0xffffffff);
 
 	INIT_COMPLETION(dev->irq_response);
 	status = readl(dev->mmio+SXS_STATUS_REG);
@@ -164,9 +164,9 @@ static void sxs_request(struct request_queue *q, struct bio *bio)
 	sector_t sector = bio->bi_sector;
 
 	bio_for_each_segment(bvec, bio, i) {
-		printk_ratelimited(KERN_INFO"REQUEST %i %i %i \n",
-		                   bio_cur_bytes(bio), bio->bi_vcnt,
-		                   bvec->bv_len);
+		printk_ratelimited(KERN_DEBUG"REQUEST %i %i %i\n",
+				   bio_cur_bytes(bio), bio->bi_vcnt,
+				   bvec->bv_len);
 		buffer = bvec_kmap_irq(bvec, &flags);
 		test_read(dev, sector, bio_cur_bytes(bio) >> 9, buffer);
 		sector += bio_cur_bytes(bio) >> 9;
@@ -209,7 +209,7 @@ static int setup_disk(struct sxs_device *dev)
 	dev->disk->private_data = dev;
 	snprintf(dev->disk->disk_name, 32, "sxs");
 	set_capacity(dev->disk, dev->num_sectors*
-	                        (dev->sector_size/KERNEL_SECTOR_SIZE));
+				(dev->sector_size/KERNEL_SECTOR_SIZE));
 	add_disk(dev->disk);
 
 end:
