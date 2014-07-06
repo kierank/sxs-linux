@@ -67,8 +67,7 @@ struct sxs_device {
 	struct completion irq_response;
 };
 
-static int sxs_getgeo(struct block_device *bdev,
-                      struct hd_geometry *geo)
+static int sxs_getgeo(struct block_device *bdev, struct hd_geometry *geo)
 {
 	struct sxs_device *dev = bdev->bd_disk->private_data;
 	long size;
@@ -130,7 +129,7 @@ static void test_read(struct sxs_device *dev, unsigned long sector,
 	writel(0x80, dev->mmio+SXS_CONTROL_REG);
 
 	if (!wait_for_completion_timeout(&dev->irq_response,
-	                                 msecs_to_jiffies(5000))) {
+					 msecs_to_jiffies(5000))) {
 		printk(KERN_DEBUG"No IRQ\n");
 	}
 
@@ -140,7 +139,7 @@ static void test_read(struct sxs_device *dev, unsigned long sector,
 	writel(0x20, dev->mmio+SXS_CONTROL_REG);
 
 	if (!wait_for_completion_timeout(&dev->irq_response,
-	                                 msecs_to_jiffies(5000))) {
+					 msecs_to_jiffies(5000))) {
 		printk(KERN_DEBUG"No IRQ\n");
 	}
 
@@ -240,7 +239,7 @@ static int boot_check(struct sxs_device *dev)
 	u32 output[4];
 
 	status = readl(dev->mmio+SXS_STATUS_REG);
-	printk(KERN_DEBUG"STATUS: %x", status );
+	printk(KERN_DEBUG"STATUS: %x", status);
 
 	if ((status & 0xa0) != 0xa0) {
 		if ((status & 0xff) != 0x20)
@@ -302,7 +301,7 @@ static void setup_card(struct sxs_device *dev)
 	writel(0x80, dev->mmio+SXS_CONTROL_REG);
 
 	if (!wait_for_completion_timeout(&dev->irq_response,
-	                                 msecs_to_jiffies(1000))) {
+					 msecs_to_jiffies(1000))) {
 		printk(KERN_DEBUG"No IRQ\n");
 	}
 
@@ -334,7 +333,7 @@ static int get_size(struct sxs_device *dev)
 	writel(0x80, dev->mmio+SXS_CONTROL_REG);
 
 	if (!wait_for_completion_timeout(&dev->irq_response,
-	                                 msecs_to_jiffies(1000))) {
+					 msecs_to_jiffies(1000))) {
 		printk(KERN_DEBUG"No IRQ\n");
 		return -EIO;
 	}
