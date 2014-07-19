@@ -86,8 +86,8 @@ static const struct block_device_operations sxs_opts = {
 	.getgeo         = sxs_getgeo
 };
 
-static void test_read(struct sxs_device *dev, unsigned long sector,
-		      unsigned long nsect, char *buffer)
+static void memcpy_read(struct sxs_device *dev, unsigned long sector,
+						unsigned long nsect, char *buffer)
 {
 	struct pci_dev *pdev = dev->pci_dev;
 	u32 status;
@@ -168,7 +168,7 @@ static void sxs_request(struct request_queue *q, struct bio *bio)
 				   bio_cur_bytes(bio), bio->bi_vcnt,
 				   bvec->bv_len);
 		buffer = bvec_kmap_irq(bvec, &flags);
-		test_read(dev, sector, bio_cur_bytes(bio) >> 9, buffer);
+		memcpy_read(dev, sector, bio_cur_bytes(bio) >> 9, buffer);
 		sector += bio_cur_bytes(bio) >> 9;
 		bvec_kunmap_irq(buffer, &flags);
 	}
