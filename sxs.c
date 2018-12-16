@@ -151,7 +151,7 @@ static void sxs_memcpy_read(struct pci_dev *pdev, unsigned long sector,
 	pci_free_consistent(pdev, 8192, dma2, dma2_handle);
 }
 
-static void sxs_request(struct request_queue *q, struct bio *bio)
+static blk_qc_t sxs_request(struct request_queue *q, struct bio *bio)
 {
 	struct bvec_iter iter;
 	struct bio_vec bvec;
@@ -159,6 +159,11 @@ static void sxs_request(struct request_queue *q, struct bio *bio)
 	unsigned long flags;
 	struct pci_dev *pdev = q->queuedata;
 	sector_t sector = bio->bi_iter.bi_sector;
+
+	if (bio_data_dir(bio)) {
+		bio->bi_status = BLK_STS_IOERR;
+		goto end;
+	}
 
 	bio_for_each_segment(bvec, bio, iter) {
 		dev_dbg_ratelimited(&pdev->dev, "REQUEST %i %i %i\n",
@@ -171,7 +176,10 @@ static void sxs_request(struct request_queue *q, struct bio *bio)
 		bvec_kunmap_irq(buffer, &flags);
 	}
 
-	bio_endio(bio, 0);
+end:
+	bio_endio(bio);
+
+	return BLK_QC_T_NONE;
 }
 
 static int sxs_setup_disk(struct pci_dev *pdev)
