@@ -164,7 +164,7 @@ static void sxs_request(struct request_queue *q, struct bio *bio)
 		dev_dbg_ratelimited(&pdev->dev, "REQUEST %i %i %i\n",
 				    bio_cur_bytes(bio), bio->bi_vcnt,
 				    bvec.bv_len);
-		buffer = bvec_kmap_irq(&bvec, &flags);
+		buffer = page_address(bvec.bv_page) + bvec.bv_offset;
 		sxs_memcpy_read(pdev, sector, bio_cur_bytes(bio) >> 9,
 				buffer);
 		sector += bio_cur_bytes(bio) >> 9;
@@ -192,6 +192,7 @@ static int sxs_setup_disk(struct pci_dev *pdev)
 	}
 
 	blk_queue_make_request(dev->queue, sxs_request);
+	blk_queue_bounce_limit(dev->queue, BLK_BOUNCE_HIGH);
 	blk_queue_logical_block_size(dev->queue, dev->sector_size);
 	dev->queue->queuedata = pdev;
 
