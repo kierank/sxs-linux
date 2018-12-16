@@ -66,6 +66,16 @@ struct sxs_device {
 	struct completion irq_response;
 };
 
+static int sxs_open(struct block_device *bdev, fmode_t mode)
+{
+	int ret;
+
+	if(mode & FMODE_WRITE)
+		return -EROFS;
+
+	return ret;
+}
+
 static int sxs_getgeo(struct block_device *bdev, struct hd_geometry *geo)
 {
 	struct sxs_device *dev = bdev->bd_disk->private_data;
@@ -82,6 +92,7 @@ static int sxs_getgeo(struct block_device *bdev, struct hd_geometry *geo)
 
 static const struct block_device_operations sxs_opts = {
 	.owner          = THIS_MODULE,
+	.open           = sxs_open,
 	.getgeo         = sxs_getgeo
 };
 
