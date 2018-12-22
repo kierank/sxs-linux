@@ -70,8 +70,7 @@ static int sxs_open(struct block_device *bdev, fmode_t mode)
 {
 	int ret;
 
-	if(mode & FMODE_WRITE)
-		return -EROFS;
+	// FIXME check read-only
 
 	return ret;
 }
@@ -114,8 +113,8 @@ static void sxs_memcpy_read(struct pci_dev *pdev, unsigned long sector,
 	nsect >>= dev->sector_shift;
 
 	/* Read */
-	dma2 = pci_alloc_consistent(pdev, 8192, &dma2_handle);
-	dma3 = pci_alloc_consistent(pdev, 8192, &dma3_handle);
+	dma2 = pci_alloc_consistent(pdev, 4096, &dma2_handle);
+	dma3 = pci_alloc_consistent(pdev, 4096, &dma3_handle);
 
 	tmp = dma2;
 	tmp2 = dma3;
@@ -158,8 +157,8 @@ static void sxs_memcpy_read(struct pci_dev *pdev, unsigned long sector,
 
 	writel(0, dev->mmio+SXS_ENABLE_REG);
 
-	pci_free_consistent(pdev, 8192, dma3, dma3_handle);
-	pci_free_consistent(pdev, 8192, dma2, dma2_handle);
+	pci_free_consistent(pdev, 4096, dma3, dma3_handle);
+	pci_free_consistent(pdev, 4096, dma2, dma2_handle);
 }
 
 static blk_qc_t sxs_request(struct request_queue *q, struct bio *bio)
@@ -344,7 +343,7 @@ static int sxs_get_size(struct pci_dev *pdev)
 	void *dma;
 	dma_addr_t dma_handle;
 
-	dma = pci_alloc_consistent(pdev, 8192, &dma_handle);
+	dma = pci_alloc_consistent(pdev, 4096, &dma_handle);
 
 	reinit_completion(&dev->irq_response);
 	status = readl(dev->mmio+SXS_STATUS_REG);
@@ -388,7 +387,7 @@ static int sxs_get_size(struct pci_dev *pdev)
 		 dev->sector_size, dev->num_sectors);
 
 error1:
-	pci_free_consistent(pdev, 8192, dma, dma_handle);
+	pci_free_consistent(pdev, 4096, dma, dma_handle);
 
 	return ret;
 }
