@@ -97,10 +97,10 @@ static const struct block_device_operations sxs_opts = {
 	.getgeo         = sxs_getgeo
 };
 
-static void test_read(struct sxs_device *dev, struct request *rq,
+static void test_read(struct pci_dev *pdev, struct request *rq,
                       struct scatterlist *sg, int direction)
 {
-        struct pci_dev *pdev = dev->pci_dev;
+        struct sxs_device *dev = pci_get_drvdata(pdev);
         u32 status;
         u32 data[4];
         u16 *tmp;
@@ -132,31 +132,33 @@ static void test_read(struct sxs_device *dev, struct request *rq,
 
         printk(KERN_INFO" %x ", sg_dma_len(&sg[0]) );
 
-        if (printk_ratelimit())
-                printk(KERN_INFO"CALL %lu %lu \n", sector & 0xffffffff, nsect & 0xffffffff);
+		dev_dbg_ratelimited(&pdev->dev, "CALL %lu %lu\n",
+					sector & 0xffffffff, nsect & 0xffffffff);
 
-        INIT_COMPLETION(dev->irq_response);
-        status = readl(dev->mmio+SXS_STATUS_REG);
-        data[0] = cpu_to_le32(0x00010028);
-        data[1] = cpu_to_le32(sector & 0xffffffff);
-        data[2] = 0x0;
-        data[3] = cpu_to_le32(nsect & 0xffffffff);
-        memcpy_toio(dev->mmio, data, sizeof(data));
-        writel(0xa0, dev->mmio+SXS_ENABLE_REG);
-        writel(0x80, dev->mmio+SXS_CONTROL_REG);
+		reinit_completion(&dev->irq_response);
+		status = readl(dev->mmio+SXS_STATUS_REG);
+		data[0] = cpu_to_le32(0x00010028);
+		data[1] = cpu_to_le32(sector & 0xffffffff);
+		data[2] = 0x0;
+		data[3] = cpu_to_le32(nsect & 0xffffffff);
+		memcpy_toio(dev->mmio, data, sizeof(data));
+		writel(0xa0, dev->mmio+SXS_ENABLE_REG);
+		writel(0x80, dev->mmio+SXS_CONTROL_REG);
 
-        if (!wait_for_completion_timeout(&dev->irq_response, msecs_to_jiffies(5000))) {
-                printk(KERN_DEBUG"No IRQ\n");
-        }
+		if (!wait_for_completion_timeout(&dev->irq_response,
+						msecs_to_jiffies(5000))) {
+			dev_dbg(&pdev->dev, "No IRQ\n");
+		}
 
-        INIT_COMPLETION(dev->irq_response);
-        writel(dma3_handle, dev->mmio+SXS_MASTER_LINK_REG_L);
-        writel(0x0, dev->mmio+SXS_MASTER_LINK_REG_H);
-        writel(0x20, dev->mmio+SXS_CONTROL_REG);
+		reinit_completion(&dev->irq_response);
+		writel(dma3_handle, dev->mmio+SXS_MASTER_LINK_REG_L);
+		writel(0x0, dev->mmio+SXS_MASTER_LINK_REG_H);
+		writel(0x20, dev->mmio+SXS_CONTROL_REG);
 
-        if (!wait_for_completion_timeout(&dev->irq_response, msecs_to_jiffies(5000))) {
-                printk(KERN_DEBUG"No IRQ\n");
-        }
+		if (!wait_for_completion_timeout(&dev->irq_response,
+						msecs_to_jiffies(5000))) {
+			dev_dbg(&pdev->dev, "No IRQ\n");
+		}
 
         if (printk_ratelimit())
                 printk(KERN_DEBUG"offset %x \n", tmp[255]);
