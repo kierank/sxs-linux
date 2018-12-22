@@ -10,6 +10,8 @@
  *  for more details.
  */
 
+#define DEBUG
+
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/interrupt.h>
@@ -71,8 +73,7 @@ static int sxs_open(struct block_device *bdev, fmode_t mode)
 {
 	int ret;
 
-	if(mode & FMODE_WRITE)
-		return -EROFS;
+	// FIXME check for read-only
 
 	return ret;
 }
@@ -117,12 +118,18 @@ static void test_read(struct pci_dev *pdev, struct request *rq,
         sector = blk_rq_pos(rq);
         nsect = blk_rq_cur_sectors(rq);
 
+		dev_dbg_ratelimited(&pdev->dev, "KERNEL %lu %lu\n",
+					sector & 0xffffffff, nsect & 0xffffffff);
+
         sector >>= dev->sector_shift;
         nsect >>= dev->sector_shift;
 
+		dev_dbg_ratelimited(&pdev->dev, "DEVICE %lu %lu\n",
+					sector & 0xffffffff, nsect & 0xffffffff);
+
         /* Read */
-        dma3 = pci_alloc_consistent(pdev, 8192, &dma3_handle);
-        memset(dma3, 0, 8192);
+        dma3 = pci_alloc_consistent(pdev, 4096, &dma3_handle);
+        memset(dma3, 0, 4096);
 
         sg_addr = sg_dma_address(&sg[0]);
 
@@ -170,38 +177,42 @@ static void test_read(struct pci_dev *pdev, struct request *rq,
 
 static void sxs_request(struct request_queue *q)
 {
-        unsigned long flags;
-        struct sxs_device *dev = q->queuedata;
-        struct request *rq;
-        struct scatterlist sg;
-        int pci_dir, n_elem, n_elem_pci;
+	unsigned long flags;
+	struct pci_dev *pdev = q->queuedata;
+	struct request *rq;
+	struct scatterlist sg;
+	int pci_dir, n_elem, n_elem_pci;
 
-        while (1){
-                rq = blk_peek_request(q);
-                if (!rq)
-                        return;
-                blk_start_request(rq);
+	printk(KERN_INFO" sxs_request");
 
-                if (rq_data_dir(rq) == WRITE)
-                    pci_dir = PCI_DMA_TODEVICE;
-                else
-                    pci_dir = PCI_DMA_FROMDEVICE;
+	while (1){
+		rq = blk_peek_request(q);
+		if (!rq)
+				return;
+		blk_start_request(rq);
 
-                n_elem = blk_rq_map_sg(q, rq, &sg);
-                if (n_elem <= 0)
-                        return;
+		if (rq_data_dir(rq) == WRITE)
+			pci_dir = PCI_DMA_TODEVICE;
+		else
+			pci_dir = PCI_DMA_FROMDEVICE;
 
-                n_elem_pci = pci_map_sg(dev->pci_dev, &sg, n_elem, pci_dir);
-                if (n_elem_pci <= 0)
-                        return;
+		n_elem = blk_rq_map_sg(q, rq, &sg);
+		if (n_elem <= 0)
+			return;
 
-                printk(KERN_INFO" %i %i ", n_elem, n_elem_pci );
+		n_elem_pci = pci_map_sg(pdev, &sg, n_elem, pci_dir);
+		if (n_elem_pci <= 0)
+			return;
 
-                test_read(dev, rq, &sg, rq_data_dir(rq) == WRITE);
+		printk(KERN_INFO" n_elem, n_elem_pci %i %i ", n_elem, n_elem_pci );
 
-                pci_unmap_sg(dev->pci_dev, &sg, n_elem, pci_dir);
-        }
+		test_read(pdev, rq, &sg, rq_data_dir(rq) == WRITE);
 
+		pci_unmap_sg(pdev, &sg, n_elem, pci_dir);
+		return;
+	}
+
+	return;
 }
 
 static int sxs_setup_disk(struct pci_dev *pdev)
@@ -215,15 +226,16 @@ static int sxs_setup_disk(struct pci_dev *pdev)
 		goto end;
 	}
 
-	dev->queue = blk_alloc_queue(GFP_KERNEL);
+	dev->queue = blk_init_queue(sxs_request, &dev->lock);
 	if (!dev->queue) {
 		ret = -ENOMEM;
 		goto end;
 	}
 
-	blk_queue_make_request(dev->queue, sxs_request);
 	blk_queue_bounce_limit(dev->queue, BLK_BOUNCE_HIGH);
 	blk_queue_logical_block_size(dev->queue, dev->sector_size);
+	blk_queue_physical_block_size(dev->queue, dev->sector_size);
+	blk_queue_max_hw_sectors(dev->queue, dev->sector_size / KERNEL_SECTOR_SIZE);
 	dev->queue->queuedata = pdev;
 
 	/* XXX: can SxS have more partitions? */
