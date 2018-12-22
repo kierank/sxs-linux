@@ -172,7 +172,7 @@ static void test_read(struct pci_dev *pdev, struct request *rq,
 
         writel(0, dev->mmio+SXS_ENABLE_REG);
 
-        pci_free_consistent(pdev, 8192, dma3, dma3_handle);
+        pci_free_consistent(pdev, 4096, dma3, dma3_handle);
 }
 
 static void sxs_request(struct request_queue *q)
@@ -367,7 +367,7 @@ static int sxs_get_size(struct pci_dev *pdev)
 	void *dma;
 	dma_addr_t dma_handle;
 
-	dma = pci_alloc_consistent(pdev, 8192, &dma_handle);
+	dma = pci_alloc_consistent(pdev, 4096, &dma_handle);
 
 	reinit_completion(&dev->irq_response);
 	status = readl(dev->mmio+SXS_STATUS_REG);
@@ -411,7 +411,7 @@ static int sxs_get_size(struct pci_dev *pdev)
 		 dev->sector_size, dev->num_sectors);
 
 error1:
-	pci_free_consistent(pdev, 8192, dma, dma_handle);
+	pci_free_consistent(pdev, 4096, dma, dma_handle);
 
 	return ret;
 }
